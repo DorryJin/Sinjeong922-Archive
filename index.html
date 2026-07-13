@@ -897,16 +897,26 @@ async function initApp(){
     return;
   }
 
-  // 시드 회의록은 항목별로 개별 확인 후, 아직 없는 것만 추가합니다 (기존 데이터는 건드리지 않음)
-  Object.keys(SEED_MEETINGS).forEach(key=>{
-    MEETINGS_REF.child(key).once('value').then(snap=>{
-      if(!snap.exists()){ MEETINGS_REF.child(key).set(SEED_MEETINGS[key]); }
+  const META_REF = db.ref('meta');
+
+  // 시드 데이터는 "한 번이라도 심어졌는지"를 meta에 영구 기록해서 판단합니다.
+  // 데이터 자체의 존재 여부로 판단하면, 사용자가 지운 기본 항목이 새로고침할 때마다 되살아나는 문제가 생깁니다.
+  META_REF.once('value').then(snap=>{
+    const meta = snap.val() || {};
+    const meetingsSeeded = meta.meetingsSeeded || {};
+    const issuesSeeded = !!meta.issuesSeeded;
+
+    Object.keys(SEED_MEETINGS).forEach(key=>{
+      if(!meetingsSeeded[key]){
+        MEETINGS_REF.child(key).set(SEED_MEETINGS[key]);
+        META_REF.child('meetingsSeeded').child(key).set(true);
+      }
     });
-  });
-  ISSUES_REF.once('value').then(snap=>{
-    if(!snap.exists()){
+
+    if(!issuesSeeded){
       const seedObj = SEED_ISSUES.reduce((acc,i)=>{ const {id,...rest}=i; acc[id]=rest; return acc; },{});
       ISSUES_REF.set(seedObj);
+      META_REF.child('issuesSeeded').set(true);
     }
   });
 
@@ -1024,7 +1034,7 @@ const SEED_ISSUES = [
   },
   {
     id:'seed-i4',
-    title:'호수밀도 보정(보정계수 산출 근거',
+    title:'호수밀도 보정계수 산출 근거',
     status:'pending',
     city:'호수밀도 71%를 반영해 보정계수를 적용했다고 설명',
     us:'보정계수 산출 근거자료(공시지가, 토지이용계획 등 기초데이터) 공개 요청 중',
